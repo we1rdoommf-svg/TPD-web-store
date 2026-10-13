@@ -1,0 +1,24 @@
+services:
+  # Swagger UI — визуальная документация
+  swagger:
+    image: swaggerapi/swagger-ui
+    container_name: swagger-ui
+    ports:
+      - "8080:8080"
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+    volumes:
+      - ./docs/openapi/openapi.yaml:/spec/openapi.yaml:ro
+    depends_on:
+      - prism
+    restart: unless-stopped
+
+  prism:
+    image: stoplight/prism:5
+    container_name: prism-mock
+    command: mock -h 0.0.0.0 -p 4010 --cors --errors --multiprocess=false /spec/openapi.yaml
+    ports:
+      - "4011:4010"
+    volumes:
+      - ./docs/openapi/openapi.yaml:/spec/openapi.yaml:ro
+    restart: unless-stopped

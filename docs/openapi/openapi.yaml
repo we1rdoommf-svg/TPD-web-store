@@ -1,0 +1,847 @@
+openapi: 3.0.3
+info:
+  title: API Интернет-магазина одежды
+  version: 1.0.0
+  description: |
+    **Стек**: Node.js + Express + PostgreSQL + Knex.
+
+servers:
+  - url: http://localhost:4011
+    description: Локальный сервер разработки
+
+tags:
+  - name: Auth
+    description: Регистрация и вход
+  - name: Пользователи
+    description: Профиль пользователя
+  - name: Товары
+    description: Каталог товаров
+  - name: Корзина
+    description: Работа с корзиной
+  - name: Заказы
+    description: Оформление и история заказов
+  - name: Админка
+    description: Управление магазином (только admin)
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ============ AUTH ============
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Регистрация нового пользователя
+      security: [] # Публичный
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              email: "user@example.com"
+              password: "qwerty123"
+              name: "Иван Иванов"
+      responses:
+        "201":
+          description: Пользователь создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход в аккаунт
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: "user@example.com"
+              password: "qwerty123"
+      responses:
+        "200":
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Выход из аккаунта
+      responses:
+        "200":
+          description: Выход выполнен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Выход выполнен"
+
+  # ============ USERS ============
+  /users/me:
+    get:
+      tags: [Пользователи]
+      summary: Получить данные текущего пользователя
+      responses:
+        "200":
+          description: Данные пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+    patch:
+      tags: [Пользователи]
+      summary: Обновить данные профиля
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Обновлённый пользователь
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  # ============ PRODUCTS ============
+  /products:
+    get:
+      tags: [Товары]
+      summary: Получить список товаров
+      security: [] # Публичный
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/LimitParam"
+        - name: category
+          in: query
+          description: Фильтр по slug категории
+          schema:
+            type: string
+          example: t-shirts
+        - name: search
+          in: query
+          description: Поиск по названию
+          schema:
+            type: string
+          example: футболка
+        - name: sort
+          in: query
+          description: Сортировка
+          schema:
+            type: string
+            enum: [price_asc, price_desc, new]
+            default: new
+        - name: min_price
+          in: query
+          schema:
+            type: number
+          example: 1000
+        - name: max_price
+          in: query
+          schema:
+            type: number
+          example: 5000
+        - name: size
+          in: query
+          schema:
+            type: string
+          example: M
+      responses:
+        "200":
+          description: Список товаров
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductList"
+
+  /products/{productId}:
+    get:
+      tags: [Товары]
+      summary: Получить карточку товара
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ProductIdParam"
+      responses:
+        "200":
+          description: Карточка товара
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetail"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  # ============ CART ============
+  /cart:
+    get:
+      tags: [Корзина]
+      summary: Получить текущую корзину
+      responses:
+        "200":
+          description: Корзина
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+
+  /cart/items:
+    post:
+      tags: [Корзина]
+      summary: Добавить товар в корзину
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CartItemCreate"
+            example:
+              product_id: 1
+              size: "M"
+              quantity: 1
+      responses:
+        "201":
+          description: Товар добавлен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+
+  /cart/items/{itemId}:
+    patch:
+      tags: [Корзина]
+      summary: Изменить количество товара
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CartItemUpdate"
+            example:
+              quantity: 3
+      responses:
+        "200":
+          description: Корзина обновлена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+    delete:
+      tags: [Корзина]
+      summary: Удалить товар из корзины
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Товар удалён
+
+  # ============ ORDERS ============
+  /orders:
+    post:
+      tags: [Заказы]
+      summary: Оформить заказ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreate"
+            example:
+              address: "Москва, ул. Ленина, 1"
+              phone: "+79990000000"
+      responses:
+        "201":
+          description: Заказ создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /orders/my:
+    get:
+      tags: [Заказы]
+      summary: История заказов пользователя
+      responses:
+        "200":
+          description: Список заказов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrderShort"
+
+  /orders/my/{orderId}:
+    get:
+      tags: [Заказы]
+      summary: Детали заказа
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Детали заказа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  # ============ ADMIN ============
+  /admin/products:
+    get:
+      tags: [Админка]
+      summary: Список всех товаров (включая скрытые)
+      responses:
+        "200":
+          description: Список товаров
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductDetail"
+    post:
+      tags: [Админка]
+      summary: Создать товар
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductCreate"
+      responses:
+        "201":
+          description: Товар создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetail"
+
+  /admin/products/{productId}:
+    patch:
+      tags: [Админка]
+      summary: Обновить товар
+      parameters:
+        - $ref: "#/components/parameters/ProductIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdate"
+      responses:
+        "200":
+          description: Товар обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetail"
+    delete:
+      tags: [Админка]
+      summary: Удалить товар
+      parameters:
+        - $ref: "#/components/parameters/ProductIdParam"
+      responses:
+        "204":
+          description: Товар удалён
+
+  /admin/orders:
+    get:
+      tags: [Админка]
+      summary: Список всех заказов
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, processing, shipped, done, cancelled]
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Список заказов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/OrderShort"
+                  total:
+                    type: integer
+
+  /admin/orders/{orderId}:
+    patch:
+      tags: [Админка]
+      summary: Изменить статус заказа
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [new, processing, shipped, done, cancelled]
+      responses:
+        "200":
+          description: Заказ обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /admin/categories:
+    get:
+      tags: [Админка]
+      summary: Список категорий
+      responses:
+        "200":
+          description: Список категорий
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+    post:
+      tags: [Админка]
+      summary: Создать категорию
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryCreate"
+      responses:
+        "201":
+          description: Категория создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+
+  /admin/categories/{categoryId}:
+    patch:
+      tags: [Админка]
+      summary: Обновить категорию
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryCreate"
+      responses:
+        "200":
+          description: Категория обновлена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+    delete:
+      tags: [Админка]
+      summary: Удалить категорию
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Категория удалена
+
+# ============ COMPONENTS ============
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT токен в заголовке Authorization.
+        Пример: `Authorization: Bearer <token>`
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: Номер страницы
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    LimitParam:
+      name: limit
+      in: query
+      description: Количество на странице
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 12
+    ProductIdParam:
+      name: productId
+      in: path
+      required: true
+      description: ID товара
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    ValidationError:
+      description: Ошибка валидации
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnauthorizedError:
+      description: Не авторизован
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFoundError:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ConflictError:
+      description: Конфликт (например, email занят)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    # ---- Auth ----
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+        name:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+
+    # ---- User ----
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+
+    # ---- Category ----
+    Category:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        slug:
+          type: string
+    CategoryCreate:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+
+    # ---- Product ----
+    Product:
+      type: object
+      required: [id, name, price]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        price:
+          type: number
+          format: float
+        image:
+          type: string
+        category:
+          type: string
+    ProductDetail:
+      allOf:
+        - $ref: "#/components/schemas/Product"
+        - type: object
+          properties:
+            description:
+              type: string
+            sizes:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProductSize"
+            images:
+              type: array
+              items:
+                type: string
+            category:
+              $ref: "#/components/schemas/Category"
+    ProductList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        total:
+          type: integer
+        page:
+          type: integer
+        pages:
+          type: integer
+    ProductSize:
+      type: object
+      properties:
+        size:
+          type: string
+        stock:
+          type: integer
+    ProductCreate:
+      type: object
+      required: [name, price, category_id]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        category_id:
+          type: integer
+        sizes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSize"
+        images:
+          type: array
+          items:
+            type: string
+    ProductUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        category_id:
+          type: integer
+
+    # ---- Cart ----
+    Cart:
+      type: object
+      properties:
+        id:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartItem"
+        total:
+          type: number
+    CartItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        product:
+          $ref: "#/components/schemas/Product"
+        size:
+          type: string
+        quantity:
+          type: integer
+        subtotal:
+          type: number
+    CartItemCreate:
+      type: object
+      required: [product_id, size]
+      properties:
+        product_id:
+          type: integer
+        size:
+          type: string
+        quantity:
+          type: integer
+          default: 1
+    CartItemUpdate:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+
+    # ---- Order ----
+    OrderShort:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [new, processing, shipped, done, cancelled]
+        total_price:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+        items_count:
+          type: integer
+    Order:
+      allOf:
+        - $ref: "#/components/schemas/OrderShort"
+        - type: object
+          properties:
+            address:
+              type: string
+            phone:
+              type: string
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/OrderItem"
+    OrderItem:
+      type: object
+      properties:
+        product_id:
+          type: integer
+        name:
+          type: string
+        size:
+          type: string
+        quantity:
+          type: integer
+        price:
+          type: number
+    OrderCreate:
+      type: object
+      required: [address, phone]
+      properties:
+        address:
+          type: string
+        phone:
+          type: string
+
+    # ---- Error ----
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
